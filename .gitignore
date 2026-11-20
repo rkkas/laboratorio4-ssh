@@ -1,0 +1,17 @@
+/.local/
+/datos/
+/.venv/
+/.env
+/.env.*
+__pycache__/
+*.pem
+*.pcap
+*.pcapng
+*.key
+*.pdf
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.log
+*.toc

@@ -1,0 +1,17 @@
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+KexAlgorithms curve25519-sha256
+Ciphers aes256-ctr
+MACs hmac-sha2-256
+HostKeyAlgorithms ssh-ed25519
+
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+AuthorizedKeysFile /etc/ssh/lab/authorized_keys
+AllowUsers laboratorio
+UsePAM no
+DisableForwarding yes
+PermitTunnel no

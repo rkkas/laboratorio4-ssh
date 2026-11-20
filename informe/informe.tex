@@ -1,0 +1,234 @@
+\documentclass[letterpaper,11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\IfFileExists{spanish.ldf}{\usepackage[spanish,es-tabla]{babel}}{%
+  \usepackage{babel}\babelprovide[import,main]{spanish}}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx,booktabs,tabularx,xcolor,fvextra}
+\usepackage[hidelinks,hypertexnames=false]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\newcommand{\estado}[1]{\textcolor{blue!45!black}{\textbf{#1}}}
+\newcommand{\evidencia}[2]{%
+  \IfFileExists{../evidencias/#1}{%
+    \begin{center}
+      \begin{minipage}{\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=0.40\textheight,keepaspectratio]{../evidencias/#1}\par
+        \small #2
+      \end{minipage}
+    \end{center}%
+  }{}%
+}
+\begin{document}
+\begin{titlepage}
+\centering
+\vspace*{1.6cm}
+{\large Universidad Diego Portales\par}
+{Criptografía y Seguridad en Redes\par}
+\vspace{2.2cm}
+{\Huge\bfseries Informe Laboratorio 4\par}
+\vspace{0.4cm}
+{\Large SSH y análisis de tráfico cifrado\par}
+\vspace{1.2cm}
+{\large Francisco Antonio Tapia Canales\par}
+\href{mailto:francisco.tapia1@mail.udp.cl}{francisco.tapia1@mail.udp.cl}\par
+\vspace{0.5cm}
+Sección 4\par
+Profesor Brayan Espina\par
+\vfill
+\IfFileExists{../.local/cliente-salida.txt}{%
+  \IfFileExists{../evidencias/ssh-version.png}{%
+    \IfFileExists{../evidencias/ssh-kexinit.png}{%
+      \IfFileExists{../evidencias/ssh-newkeys.png}{%
+        \IfFileExists{../.local/descifrado/transacciones.txt}{Laboratorio 4 · 2026}{\estado{Avance: faltan las transacciones originales}}%
+      }{\estado{Avance: faltan capturas de Wireshark}}%
+    }{\estado{Avance: faltan capturas de Wireshark}}%
+  }{\estado{Avance: faltan capturas de Wireshark}}%
+}{\estado{Avance: evidencia SSH pendiente de revisión}}\par
+\vspace{0.9cm}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\section{Descripción}
+El laboratorio estudia la protección del tráfico de red en dos escenarios:
+una conexión SSH a un servidor local y una captura suministrada por el curso.
+En el primer caso se distingue la información visible en la red de los datos
+que protege el cifrado. En el segundo se reconstruye el proceso de cifrado con
+las claves de prueba entregadas para el ejercicio.
+
+\section{Actividades}
+\subsection{Configuración y análisis de SSH}
+La prueba consiste en desplegar un contenedor con OpenSSH, conectar un
+cliente desde el equipo local y observar en Wireshark el tráfico antes y
+después del intercambio de claves.
+\subsection{Análisis de la captura proporcionada}
+Se identifican los registros RSA y AES-GCM. El PIN recuperado se utiliza
+para derivar una clave AES de 256 bits y verificar la autenticidad de cada
+transacción antes de recuperar su texto.
+
+\section{Desarrollo}
+\subsection{Actividad 1: SSH}
+\subsubsection{Dockerfile}
+La imagen parte de Debian Bookworm e instala \texttt{openssh-server}. El
+contenedor ejecuta \texttt{sshd} en primer plano y genera una clave de host
+Ed25519 al iniciar por primera vez. El puerto 22 del contenedor se publica
+en \texttt{127.0.0.1:2222} de Ubuntu.
+En la VM se construyó la imagen \texttt{a9f78de2a076} con la etiqueta
+\texttt{udp-lab4-ssh:local}. El script de arranque confirmó que el
+servidor estaba listo en \texttt{127.0.0.1:2222}. La salida
+\texttt{LAB4\_SSH\_OK} de la prueba cliente-servidor acredita que el
+contenedor aceptó la conexión y ejecutó el comando remoto.
+\subsubsection{Configuración del servidor}
+El archivo \texttt{ssh/sshd\_config} restringe los algoritmos permitidos.
+El usuario de prueba se autentica por clave pública; la configuración
+deshabilita la autenticación por contraseña y el acceso de root.
+\IfFileExists{../.local/sshd-efectivo.txt}{%
+  Se comprobó la configuración efectiva con \texttt{sshd -T} dentro del contenedor.
+  \VerbatimInput[fontsize=\footnotesize,breaklines]{../.local/sshd-efectivo.txt}
+}{}
+\subsubsection{Algoritmos}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Algoritmo} & \textbf{Función}\tabularnewline
+\midrule
+\texttt{curve25519-sha256} & Acuerdo de un secreto compartido para derivar las claves de sesión.\tabularnewline
+\texttt{aes256-ctr} & Cifrado del tráfico de la sesión con AES de 256 bits en modo contador.\tabularnewline
+\texttt{hmac-sha2-256} & Verificación de la integridad y autenticidad de los paquetes SSH con una clave compartida.\tabularnewline
+\texttt{ssh-ed25519} & Firma que autentica al servidor durante el intercambio de claves.\tabularnewline
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Conexión cliente-servidor}
+\IfFileExists{../.local/cliente-salida.txt}{%
+  El cliente registró la siguiente salida:
+  \VerbatimInput[fontsize=\small,breaklines]{../.local/cliente-salida.txt}
+  \IfFileExists{../.local/negociacion.txt}{%
+    Los algoritmos negociados se observaron en el registro del cliente:
+    \VerbatimInput[fontsize=\footnotesize,breaklines]{../.local/negociacion.txt}
+  }{}%
+}{\estado{Pendiente: registrar la salida del cliente SSH en Ubuntu.}}
+
+\subsubsection{Análisis de tráfico}
+En una conexión de este tipo se pueden distinguir, al menos, estos
+elementos:
+\begin{enumerate}
+  \item \textbf{Direcciones y puertos.} Las cabeceras IP y TCP permiten
+        identificar los extremos de la conexión, incluso después de activar el cifrado.
+  \item \textbf{Identificación de SSH.} Las cadenas de versión del protocolo
+        y del software se intercambian antes del cifrado.
+  \item \textbf{Propuestas de algoritmos.} Los mensajes iniciales KEXINIT
+        anuncian las listas que ofrece cada extremo; el log del cliente muestra la
+        selección final.
+  \item \textbf{Cambio a tráfico cifrado.} NEWKEYS marca el paso al uso
+        de las nuevas claves. Los datos de aplicación posteriores quedan cifrados,
+        aunque se mantienen observables las longitudes y los tiempos.
+\end{enumerate}
+\IfFileExists{../evidencias/ssh-version.png}{}{%
+  \estado{Pendiente: adjuntar capturas de la conexión propia en Wireshark.}}
+\IfFileExists{../evidencias/ssh-version.png}{%
+  La conexión se estableció entre \texttt{127.0.0.1:57062} (cliente) y
+  \texttt{127.0.0.1:2222} (servidor). Se observaron las identificaciones
+  de OpenSSH 10.2p1 y OpenSSH 9.2p1, respectivamente. Los números de trama
+  que aparecen en las figuras corresponden a la vista original de Wireshark.%
+}{}
+\evidencia{ssh-version.png}{Tramas 132 y 134. Identificación SSH del cliente y del servidor, con las direcciones IP y los puertos de la conexión.}
+\evidencia{ssh-kexinit.png}{Trama 137. Propuesta del servidor en el mensaje KEXINIT, con el intercambio de claves, la clave de host, el cifrado y el MAC.}
+\evidencia{ssh-newkeys.png}{Tramas 139, 140 y 142. Se observa el cambio de claves del servidor y del cliente. La trama 142 muestra un paquete cifrado del cliente.}
+\IfFileExists{../evidencias/ssh-newkeys.png}{%
+  \IfFileExists{../.local/trafico-ssh.tsv}{%
+    \paragraph{Verificación del archivo exportado.}
+    Se analizaron con TShark las 40 tramas del archivo
+    \texttt{ssh-lab4.pcapng}, correspondientes a un único flujo TCP local.
+    La exportación de los paquetes mostrados reinició la numeración.
+    \par\smallskip
+    \begin{tabularx}{\linewidth}{@{}Xcc@{}}
+    \toprule
+    \textbf{Evento} & \textbf{Vista original} & \textbf{Archivo exportado}\tabularnewline
+    \midrule
+    Identificación del cliente y del servidor & 132 y 134 & 4 y 6\tabularnewline
+    KEXINIT del cliente y del servidor & 136 y 137 & 8 y 9\tabularnewline
+    NEWKEYS del servidor y del cliente & 139 y 140 & 11 y 12\tabularnewline
+    Primer paquete cifrado del cliente & 142 & 14\tabularnewline
+    \bottomrule
+    \end{tabularx}%
+  }{%
+    \par Queda pendiente verificar el archivo de captura con TShark.%
+  }%
+}{}
+
+\clearpage
+\subsection{Actividad 2: captura del curso}
+\subsubsection{Paquete RSA\_PIN}
+El registro \texttt{RSA\_PIN|} se observó en la trama 1 de la captura oficial.
+Le siguen una sal de 16 bytes y 256 bytes de texto cifrado con una clave
+RSA de 2048 bits. Se comprobó que la clave pública y la privada corresponden
+al mismo par.
+\subsubsection{Paquetes AESGCM}
+Se identificaron 40 registros \texttt{AESGCM|}, repartidos entre las tramas 2
+y 41. Después de la etiqueta hay un nonce de 12 bytes, seguido del texto
+cifrado y una etiqueta de autenticación de 16 bytes. Se observaron 40 nonces
+distintos.
+
+El inventario del script registró los siguientes tamaños en bytes, medidos
+sobre la carga TCP de las dos primeras tramas.
+\par\smallskip
+\begin{tabularx}{\linewidth}{@{}clcX@{}}
+\toprule
+\textbf{Trama} & \textbf{Registro} & \textbf{Carga TCP} & \textbf{Campos en orden}\tabularnewline
+\midrule
+1 & \texttt{RSA\_PIN|} & 280 & Etiqueta (8), sal (16), PIN cifrado con RSA (256).\tabularnewline
+2 & \texttt{AESGCM|} & 119 & Etiqueta (7), nonce (12), texto cifrado (84), etiqueta GCM (16).\tabularnewline
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Recuperación del PIN y derivación de la clave}
+La clave privada permitió recuperar cuatro dígitos en ASCII mediante
+RSA-OAEP con SHA-256 y MGF1-SHA-256. Estos bytes se conservaron, incluidos
+eventuales ceros iniciales, y se aplicó Scrypt con \(N=2^{14}\), \(r=8\),
+\(p=1\) y una salida de 32 bytes. La sal hace que el mismo PIN produzca
+claves distintas con sales diferentes. Para reproducir la clave original,
+deben mantenerse el PIN, la sal, los parámetros y la longitud de salida.
+El parámetro \(N\) determina el costo de cómputo y memoria,
+\(r\) fija el tamaño del bloque procesado y \(p\) establece cuántos
+bloques se procesan de forma independiente. Con \(p=1\) se procesa un
+solo bloque por derivación. Estas funciones se describen en el RFC 7914.
+\subsubsection{Descifrado de mensajes}
+El script \texttt{scripts/descifrar.py} separó las cargas TCP, validó la
+etiqueta GCM de cada transacción y recuperó los 40 mensajes. Se conservó
+el formato original de cada línea con identificador, remitente, destinatario
+y monto. El inventario de tramas y el resumen de la ejecución están en
+la carpeta \texttt{evidencias} del proyecto.
+\IfFileExists{../.local/descifrado/verificacion.txt}{%
+  El script registró este resumen de la ejecución en Ubuntu.
+  \VerbatimInput[firstline=1,lastline=4,fontsize=\footnotesize,breaklines]{../.local/descifrado/verificacion.txt}
+}{}
+\IfFileExists{../.local/descifrado/transacciones.txt}{%
+  \VerbatimInput[fontsize=\scriptsize,breaklines]{../.local/descifrado/transacciones.txt}
+}{%
+  \estado{Verificación previa.} Queda pendiente repetirla con los archivos oficiales.%
+}
+
+\section*{Conclusiones y comentarios}
+\addcontentsline{toc}{section}{Conclusiones y comentarios}
+SSH cifra los datos de aplicación, pero un observador aún puede ver
+los extremos de la conexión y el intercambio inicial. En la captura del
+curso, el acceso a la clave privada RSA permitió recuperar el PIN y,
+con él, reproducir la clave de AES-GCM. La autenticación GCM permitió
+validar los mensajes recuperados.
+
+Las claves RSA solo sirven para operaciones RSA compatibles. No se podrían
+utilizar para recuperar el secreto de un esquema poscuántico independiente:
+haría falta la clave privada correspondiente al esquema que se hubiese usado.
+Si el secreto de sesión se obtuviera por otro medio autorizado, el uso de
+AES-GCM se evaluaría por separado.
+
+\section{Bibliografía}
+\href{https://drive.google.com/drive/folders/1rXMp5y9WeBR36iytc4RBaqXKWf3ea-WU}
+{Captura y claves de prueba del Laboratorio 4}.\par
+\href{https://www.rfc-editor.org/rfc/rfc7914.html}{RFC 7914. The scrypt Password-Based Key Derivation Function}.
+\par\medskip\noindent Repositorio GitHub: \url{https://github.com/rkkas/laboratorio4-ssh}
+\end{document}
